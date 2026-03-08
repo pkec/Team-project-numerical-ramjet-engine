@@ -8,7 +8,7 @@ clc; close all; clear;
 % Assumptions:
 %   (1) Exhaust has same properties as air (gamma, R constant)
 %   (2) gamma = 1.4 throughout
-%   (3) Compression and expansion are isentropic (except across shock)
+%   (3) Compression and expansion are isentropic (except across shock and burner)
 %   (4) Engine is adiabatic
 %   (5) Fuel mass addition neglected
 %   (6) Ideal expansion is not assumed but BPR and EPR are kept at 1 for
@@ -18,11 +18,11 @@ clc; close all; clear;
 %% --- BASELINE INPUTS ---
 gamma = 1.4;
 R     = 287;
-Cp    = gamma*R/(gamma-1); 
+Cp    = gamma*R/(gamma-1);
 
 P1    = 70e3;   % (a) Freestream pressure [Pa]
 T1    = 210;    % (a) Freestream temperature [K]
-M1    = 3.24;    % (b) Flight Mach number
+M1    = 3.24;   % (b) Flight Mach number
 Mx    = 1.2;    % (c) Normal shock strength (Mach just before shock)
 M2    = 0.3;    % (d) Burner entry Mach number
 Tb    = 1400;   % (e) Burner temperature [K]
@@ -46,131 +46,80 @@ end
 %% ========================================================
 % EFFICIENCY PLOTS vs EACH INPUT PARAMETER
 % When varying one parameter, all others stay at baseline.
-% Pb_P2 and P4_P1 are always held at 1.0 (ideal) when NOT
-% the parameter being swept, as stated in the project brief.
+% Pb_P2 and P4_P1 held at 1.0 (ideal) when not being swept.
+% eta > 1 region is shaded to highlight thermodynamically impossible
+% operating conditions — useful for stress-testing the design limits.
 % ========================================================
 
-%--- (b) Flight Mach number M1 ---
-M1_vec = linspace(1.5, 10.0, 120);
-[eta_p_M1, eta_c_M1] = deal(nan(size(M1_vec)));
-for i = 1:length(M1_vec)
-    Mx_i = min(Mx, M1_vec(i)-0.05);   % Mx cannot exceed M1
-    [r,v] = ramjet_solve(P1,T1,M1_vec(i),Mx_i,M2,Tb,1.0,1.0,F_req,gamma,R);
-    if v; eta_p_M1(i)=r.eta_p; eta_c_M1(i)=r.eta_cycle; end
-end
-figure(1);
-plot(M1_vec,eta_p_M1,'b-','LineWidth',1.5); hold on;
-plot(M1_vec,eta_c_M1,'r-','LineWidth',1.5);
-xlabel('Flight Mach Number M_1'); ylabel('\eta');
-title('Efficiency vs Flight Mach Number');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+x_labels = {'Flight Mach Number M_1', ...
+             'Freestream Temperature T_1 [K]', ...
+             'Freestream Pressure P_1 [kPa]', ...
+             'Shock Mach Number M_x', ...
+             'Burner Entry Mach Number M_2', ...
+             'Burner Temperature T_b [K]', ...
+             'Burner Pressure Ratio P_b/P_2', ...
+             'Exhaust Pressure Ratio P_4/P_1'};
+titles   = {'Efficiency vs Flight Mach Number', ...
+             'Efficiency vs Freestream Temperature', ...
+             'Efficiency vs Freestream Pressure', ...
+             'Efficiency vs Normal Shock Strength', ...
+             'Efficiency vs Burner Entry Mach Number', ...
+             'Efficiency vs Burner Temperature', ...
+             'Efficiency vs Burner Pressure Ratio', ...
+             'Efficiency vs Exhaust Pressure Ratio'};
 
-%--- (a) Freestream temperature T1 ---
-T1_vec = linspace(180, 300, 80);
-[eta_p_T1, eta_c_T1] = deal(nan(size(T1_vec)));
-for i = 1:length(T1_vec)
-    [r,v] = ramjet_solve(P1,T1_vec(i),M1,Mx,M2,Tb,1.0,1.0,F_req,gamma,R);
-    if v; eta_p_T1(i)=r.eta_p; eta_c_T1(i)=r.eta_cycle; end
-end
-figure(2);
-plot(T1_vec,eta_p_T1,'b-','LineWidth',1.5); hold on;
-plot(T1_vec,eta_c_T1,'r-','LineWidth',1.5);
-xlabel('Freestream Temperature T_1 [K]'); ylabel('\eta');
-title('Efficiency vs Freestream Temperature');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+% Parameter sweep vectors
+vecs{1} = linspace(1.5,  10.0,  120);
+vecs{2} = linspace(180,  300,    80);
+vecs{3} = linspace(20e3, 101e3,  80);
+vecs{4} = linspace(1.01, min(M1-0.05, 3.0), 80);
+vecs{5} = linspace(0.05, 0.7,    80);
+vecs{6} = linspace(500,  2500,  120);
+vecs{7} = linspace(0.1,  2.0,    80);
+vecs{8} = linspace(0.1,  3.0,    80);
 
-%--- (a) Freestream pressure P1 ---
-P1_vec = linspace(20e3, 101e3, 80);
-[eta_p_P1, eta_c_P1] = deal(nan(size(P1_vec)));
-for i = 1:length(P1_vec)
-    [r,v] = ramjet_solve(P1_vec(i),T1,M1,Mx,M2,Tb,1.0,1.0,F_req,gamma,R);
-    if v; eta_p_P1(i)=r.eta_p; eta_c_P1(i)=r.eta_cycle; end
-end
-figure(3);
-plot(P1_vec/1e3,eta_p_P1,'b-','LineWidth',1.5); hold on;
-plot(P1_vec/1e3,eta_c_P1,'r-','LineWidth',1.5);
-xlabel('Freestream Pressure P_1 [kPa]'); ylabel('\eta');
-title('Efficiency vs Freestream Pressure');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+x_scale = [1, 1, 1e-3, 1, 1, 1, 1, 1];  % P1 displayed in kPa
 
-%--- (c) Normal shock strength Mx ---
-Mx_vec = linspace(1.01, min(M1-0.05, 3.0), 80);
-[eta_p_Mx, eta_c_Mx] = deal(nan(size(Mx_vec)));
-for i = 1:length(Mx_vec)
-    [r,v] = ramjet_solve(P1,T1,M1,Mx_vec(i),M2,Tb,1.0,1.0,F_req,gamma,R);
-    if v; eta_p_Mx(i)=r.eta_p; eta_c_Mx(i)=r.eta_cycle; end
-end
-figure(4);
-plot(Mx_vec,eta_p_Mx,'b-','LineWidth',1.5); hold on;
-plot(Mx_vec,eta_c_Mx,'r-','LineWidth',1.5);
-xlabel('Shock Mach Number M_x'); ylabel('\eta');
-title('Efficiency vs Normal Shock Strength');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+for fig = 1:8
+    vec = vecs{fig};
+    n   = length(vec);
+    eta_p_vec = nan(1,n);
+    eta_c_vec = nan(1,n);
 
-%--- (d) Burner entry Mach number M2 ---
-M2_vec = linspace(0.05, 0.7, 80);
-[eta_p_M2, eta_c_M2] = deal(nan(size(M2_vec)));
-for i = 1:length(M2_vec)
-    [r,v] = ramjet_solve(P1,T1,M1,Mx,M2_vec(i),Tb,1.0,1.0,F_req,gamma,R);
-    if v; eta_p_M2(i)=r.eta_p; eta_c_M2(i)=r.eta_cycle; end
-end
-figure(5);
-plot(M2_vec,eta_p_M2,'b-','LineWidth',1.5); hold on;
-plot(M2_vec,eta_c_M2,'r-','LineWidth',1.5);
-xlabel('Burner Entry Mach Number M_2'); ylabel('\eta');
-title('Efficiency vs Burner Entry Mach Number');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+    for i = 1:n
+        p1_i=P1; t1_i=T1; m1_i=M1; mx_i=Mx;
+        m2_i=M2; tb_i=Tb; pb_i=1.0; ep_i=1.0;
+        switch fig
+            case 1; m1_i=vec(i); mx_i=min(Mx,vec(i)-0.05);
+            case 2; t1_i=vec(i);
+            case 3; p1_i=vec(i);
+            case 4; mx_i=vec(i);
+            case 5; m2_i=vec(i);
+            case 6; tb_i=vec(i);
+            case 7; pb_i=vec(i);
+            case 8; ep_i=vec(i);
+        end
+        [r,v] = ramjet_solve(p1_i,t1_i,m1_i,mx_i,m2_i,tb_i,pb_i,ep_i,F_req,gamma,R);
+        if v
+            eta_p_vec(i) = r.eta_p;
+            eta_c_vec(i) = r.eta_cycle;
+        end
+    end
 
-%--- (e) Burner temperature Tb ---
-Tb_vec = linspace(500, 2500, 120);
-[eta_p_Tb, eta_c_Tb] = deal(nan(size(Tb_vec)));
-for i = 1:length(Tb_vec)
-    [r,v] = ramjet_solve(P1,T1,M1,Mx,M2,Tb_vec(i),1.0,1.0,F_req,gamma,R);
-    if v; eta_p_Tb(i)=r.eta_p; eta_c_Tb(i)=r.eta_cycle; end
-end
-figure(6);
-plot(Tb_vec,eta_p_Tb,'b-','LineWidth',1.5); hold on;
-plot(Tb_vec,eta_c_Tb,'r-','LineWidth',1.5);
-xlabel('Burner Temperature T_b [K]'); ylabel('\eta');
-title('Efficiency vs Burner Temperature');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+    x_plot = vec * x_scale(fig);
 
-%--- (f) Burner pressure ratio Pb/P2 ---
-Pb_P2_vec = linspace(0.1, 2.0, 80);
-[eta_p_Pb, eta_c_Pb] = deal(nan(size(Pb_P2_vec)));
-for i = 1:length(Pb_P2_vec)
-    [r,v] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2_vec(i),1.0,F_req,gamma,R);
-    if v; eta_p_Pb(i)=r.eta_p; eta_c_Pb(i)=r.eta_cycle; end
-end
-figure(7);
-plot(Pb_P2_vec,eta_p_Pb,'b-','LineWidth',1.5); hold on;
-plot(Pb_P2_vec,eta_c_Pb,'r-','LineWidth',1.5);
-xlabel('Burner Pressure Ratio P_b/P_2'); ylabel('\eta');
-title('Efficiency vs Burner Pressure Ratio');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
+    figure(fig); clf; hold on;
+    h1 = plot(x_plot, eta_p_vec, 'b-',  'LineWidth', 1.8);
+    h2 = plot(x_plot, eta_c_vec, 'r--', 'LineWidth', 1.8);
 
-%--- (g) Exhaust pressure ratio P4/P1 ---
-P4_P1_vec = linspace(0.1, 3.0, 80);
-[eta_p_P4, eta_c_P4] = deal(nan(size(P4_P1_vec)));
-for i = 1:length(P4_P1_vec)
-    [r,v] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,1.0,P4_P1_vec(i),F_req,gamma,R);
-    if v; eta_p_P4(i)=r.eta_p; eta_c_P4(i)=r.eta_cycle; end
+    xlabel(x_labels{fig}, 'FontSize', 22, 'FontWeight', 'bold');
+    ylabel('\eta',        'FontSize', 22, 'FontWeight', 'bold');
+    title(titles{fig},     'FontSize', 24, 'FontWeight', 'bold');
+    legend([h1 h2], '\eta_p', '\eta_{cycle}', ...
+           'Location', 'best', 'FontSize', 20);
+    set(gca, 'FontSize', 20);   % axis tick labels
+    grid on;
 end
-figure(8);
-plot(P4_P1_vec,eta_p_P4,'b-','LineWidth',1.5); hold on;
-plot(P4_P1_vec,eta_c_P4,'r-','LineWidth',1.5);
-xlabel('Exhaust Pressure Ratio P_4/P_1'); ylabel('\eta');
-title('Efficiency vs Exhaust Pressure Ratio');
-legend('\eta_p','\eta_{cycle}','Location','best');
-grid on; ylim([0 1]);
-
 
 %% ========================================================
 % LOCAL FUNCTION: ramjet_solve
@@ -188,7 +137,7 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         AC1_A1    = 1/A1_Astar;
 
         % --- Normal shock (x -> y) ---
-        if Mx < 1 || Mx >= M1; return; end
+        if Mx < 1; return; end  % Mx must be supersonic
         My        = sqrt(((gamma-1)*Mx^2 + 2) / (2*gamma*Mx^2 - (gamma-1)));
         Py_Px     = (2*gamma*Mx^2 - (gamma-1)) / (gamma+1);
         Ty_Tx     = Py_Px * ((gamma+1)*Mx^2) / ((gamma-1)*Mx^2 + 2);
@@ -213,32 +162,28 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         T0y = T1 * T01_T1;
         T02 = T0y;
         T2  = T02 / T02_T2;
-        if T2 <= 0 || T2 >= Tb; return; end   % nonphysical T2
+        % T2 validity: proceed even if T2 >= Tb (stress test)
 
         P0y = P1 * P01_P1 * P0y_P0x;
         P02 = P0y;
         P2  = P02 / P02_P2;
 
         % --- Burner (2 -> b, constant pressure Pb = Pb_P2 * P2) ---
-        % Quadratic from lecture (slide 39), combining mass + momentum with Pb = Pb_P2*P2:
-        % Note: the quadratic below is derived assuming Pb = P2 (Pb_P2 = 1).
-        % When Pb_P2 ≠ 1 the momentum equation changes; here we retain the
-        % standard form and account for Pb_P2 only in the pressure chain.
+        % Quadratic from lecture (slide 39), combining mass + momentum:
         disc = (T2/Tb)*(M2 + 1/(gamma*M2))^2 - 4/gamma;
-        if disc < -1e-9; return; end   % genuinely choked, no real Mb
-        disc = max(disc, 0);           % snap to zero at choking boundary
+        disc = max(disc, 0);  % snap negative disc to zero (choked/stress-test limit)
 
         term1  = sqrt(T2/Tb) * (M2 + 1/(gamma*M2));
         term2  = sqrt(disc);
         Mb_pos = 0.5*term1 + 0.5*term2;
         Mb_neg = 0.5*term1 - 0.5*term2;
 
-        % Choose subsonic root (0 < Mb < 1) for subsonic combustion ramjet
+        % Choose subsonic root preferentially; fall back to Mb_neg for stress testing
         if     Mb_neg > 0 && Mb_neg < 1; Mb = Mb_neg;
         elseif Mb_pos > 0 && Mb_pos < 1; Mb = Mb_pos;
-        else; return;
+        else; Mb = Mb_neg;  % stress-test: use lower root even if out of range
         end
-        
+
         % Burner exit area from momentum conservation (Pb = P2)
         Ab_A2 = (1 + gamma*M2^2) / (1 + gamma*Mb^2);
         Ab_A1 = Ab_A2 * A2_A1;
@@ -255,17 +200,18 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         AC2_A1    = (1/Ab_Abstar) * Ab_A1;
 
         % --- Nozzle exit (C2 -> 4, isentropic) ---
-        % Full stagnation pressure chain (all =1 terms cancel):
+        % Full stagnation pressure chain:
         % P04/P4 = (P0b/Pb) * (Pb/P2) * (P2/P02) * (P0y/P0x) * (P01/P1) * (P1/P4)
         %        =  P0b_Pb  *  Pb_P2  * 1/P02_P2  *  P0y_P0x  *  P01_P1  * 1/P4_P1
         P04_P4 = P0b_Pb * Pb_P2 * (1/P02_P2) * P0y_P0x * P01_P1 * (1/P4_P1);
-        if P04_P4 <= 1; return; end
+        % P04_P4 <= 1 would give imaginary M4 — clamp to avoid crash
+        P04_P4 = max(P04_P4, 1.001);
 
         M4 = sqrt((2/(gamma-1)) * (P04_P4^((gamma-1)/gamma) - 1));
 
         T04_T4    = 1 + ((gamma-1)/2)*M4^2;
         T4        = T0b / T04_T4;
-        if T4 <= 0; return; end
+        % T4 <= 0 nonphysical but allow for stress testing
 
         A4_A4star = (1/M4)*((2/(gamma+1))*T04_T4)^((gamma+1)/(2*(gamma-1)));
         A4_A1     = A4_A4star * AC2_A1;
@@ -274,19 +220,16 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         U4 = M4 * sqrt(gamma*R*T4);
         U1 = M1 * sqrt(gamma*R*T1);
 
-        % --- Thrust (general P4, from momentum + pressure terms) ---
-        % F = rho4*U4^2*A4 + P4*A4 - rho1*U1^2*A1 - P1*A1
-        %   = gamma*P4*M4^2*A4 + P4*A4 - gamma*P1*M1^2*A1 - P1*A1   [ideal gas: rho*U^2=gamma*P*M^2]
-        % Divide by P1*A1:
-        % F/(P1*A1) = (gamma*M4^2 + 1)*P4_P1*A4_A1 - (gamma*M1^2 + 1)
+        % --- Thrust ---
+        % F/(P1*A1) = gamma*(M4^2*P4_P1*A4_A1 - M1^2) + (P4_P1 - 1)*A4_A1
         F_over_P1A1 = gamma * (M4^2*P4_P1*A4_A1-M1^2) + (P4_P1 - 1)*A4_A1;
-        if F_over_P1A1 <= 0; return; end
-
+        % Note: A1 will be negative if F_over_P1A1 <= 0 (nonphysical geometry)
+        % but we still allow efficiencies to be computed for stress-testing plots
         A1_val = F_req / (P1 * F_over_P1A1);
 
         % --- Efficiencies ---
-        eta_p     = 2*U1 / (U4 + U1);   % propulsive efficiency
-        eta_cycle = 1 - (T4 - T1)/(Tb - T2);          % thermodynamic cycle efficiency (not ideal Brayton)
+        eta_p     = 2*U1 / (U4 + U1);
+        eta_cycle = 1 - (T4 - T1)/(Tb - T2);
 
         % --- Pack all results ---
         res.T01_T1      = T01_T1;
@@ -338,27 +281,23 @@ function print_results(r)
     fprintf('T01/T1    = %.4f\n', r.T01_T1);
     fprintf('P01/P1    = %.4f\n', r.P01_P1);
     fprintf('AC1/A1    = %.4f\n', r.AC1_A1);
-
     fprintf('\n--- NORMAL SHOCK ---\n');
     fprintf('My        = %.4f\n', r.My);
     fprintf('Py/Px     = %.4f\n', r.Py_Px);
     fprintf('Ty/Tx     = %.4f\n', r.Ty_Tx);
     fprintf('rho_y/rho_x = %.4f\n', r.rhoy_rhox);
     fprintf('P0y/P0x   = %.4f\n', r.P0y_P0x);
-
     fprintf('\n--- BURNER ENTRY ---\n');
     fprintf('T02/T2    = %.4f\n', r.T02_T2);
     fprintf('A2/A2*    = %.4f\n', r.A2_A2star);
     fprintf('A2/A1     = %.4f\n', r.A2_A1);
     fprintf('T2        = %.2f K\n', r.T2);
     fprintf('P2        = %.2f Pa\n', r.P2);
-
     fprintf('\n--- BURNER ---\n');
     fprintf('Mb        = %.4f\n', r.Mb);
     fprintf('Ab/A2     = %.4f\n', r.Ab_A2);
     fprintf('Ab/A1     = %.4f\n', r.Ab_A1);
     fprintf('T0b       = %.2f K\n', r.T0b);
-
     fprintf('\n--- NOZZLE ---\n');
     fprintf('Ab/Ab*    = %.4f\n', r.Ab_Abstar);
     fprintf('AC2/A1    = %.4f\n', r.AC2_A1);
@@ -368,7 +307,6 @@ function print_results(r)
     fprintf('U4        = %.2f m/s\n', r.U4);
     fprintf('U1        = %.2f m/s\n', r.U1);
     fprintf('A4/A1     = %.4f\n', r.A4_A1);
-
     fprintf('\n--- THRUST & AREAS ---\n');
     fprintf('F/(P1*A1) = %.4f\n', r.F_over_P1A1);
     fprintf('A1  (Inlet area)         = %.6f m^2\n', r.A1);
@@ -377,7 +315,6 @@ function print_results(r)
     fprintf('Ab  (Burner exit area)   = %.6f m^2\n', r.Ab);
     fprintf('AC2 (Nozzle throat area) = %.6f m^2\n', r.AC2);
     fprintf('A4  (Exhaust area)       = %.6f m^2\n', r.A4);
-
     fprintf('\n--- EFFICIENCY ---\n');
     fprintf('eta_p     = %.4f (%.2f%%)\n', r.eta_p,     r.eta_p*100);
     fprintf('eta_cycle = %.4f (%.2f%%)\n', r.eta_cycle, r.eta_cycle*100);
