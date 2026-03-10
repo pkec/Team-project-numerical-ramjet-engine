@@ -247,6 +247,7 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         rho1    = P1 / (R * T1);
         mdot_A1 = rho1 * U1;              % mdot per unit A1 [kg/m^2/s]
         P4      = P4_P1 * P1;
+        A4_A1   = A4_A1;                  % already computed above
         % F/A1 = mdot_A1*(U4-U1) + (P4-P1)*A4_A1
         F_over_A1   = mdot_A1*(U4 - U1) + (P4 - P1)*A4_A1;
         F_over_P1A1 = F_over_A1 / P1;    % non-dimensionalise by P1
@@ -254,7 +255,9 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         A1_val = F_req / (P1 * F_over_P1A1);
 
         % --- Efficiencies ---
-        eta_p     = 2*U1 / (U4 + U1);
+        % Propulsive efficiency from lecture (general, no ideal expansion assumption):
+        % eta_p = (F/P1A1) * (2*R*T1) / (U4^2 - U1^2)
+        eta_p     = F_over_P1A1 * (2*R*T1) / (U4^2 - U1^2);
         eta_cycle = 1 - (T4 - T1)/(Tb - T2);
 
         % --- Pack all results ---
