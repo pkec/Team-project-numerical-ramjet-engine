@@ -237,20 +237,9 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         U4 = M4 * sqrt(gamma*R*T4);
         U1 = M1 * sqrt(gamma*R*T1);
 
-        % --- Thrust (Control Volume Method) ---
-        % F = mdot*(U4 - U1) + (P4 - P1)*A4
-        % mdot = rho1*U1*A1 = (P1/R*T1)*U1*A1
-        % Dividing through by P1*A1 to non-dimensionalise:
-        % F/(P1*A1) = (rho1*U1/P1)*(U4-U1) + (P4/P1 - 1)*A4/A1
-        % Using ideal gas rho1 = P1/(R*T1) and U = M*sqrt(gamma*R*T):
-        % rho1*U1^2/P1 = gamma*M1^2, so rho1*U1/P1 = gamma*M1^2/U1
-        rho1    = P1 / (R * T1);
-        mdot_A1 = rho1 * U1;              % mdot per unit A1 [kg/m^2/s]
-        P4      = P4_P1 * P1;
-        A4_A1   = A4_A1;                  % already computed above
-        % F/A1 = mdot_A1*(U4-U1) + (P4-P1)*A4_A1
-        F_over_A1   = mdot_A1*(U4 - U1) + (P4 - P1)*A4_A1;
-        F_over_P1A1 = F_over_A1 / P1;    % non-dimensionalise by P1
+        % --- Thrust ---
+        % F/(P1*A1) = gamma*(M4^2*(P4/P1)*(A4/A1) - M1^2) + (P4/P1 - 1)*(A4/A1)
+        F_over_P1A1 = gamma*(M4^2*P4_P1*A4_A1 - M1^2) + (P4_P1 - 1)*A4_A1;
         % Note: negative value means drag — efficiencies still computed
         A1_val = F_req / (P1 * F_over_P1A1);
 
