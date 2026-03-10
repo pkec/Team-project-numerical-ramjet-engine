@@ -20,15 +20,15 @@ gamma = 1.4;
 R     = 287;
 Cp    = gamma*R/(gamma-1);
 
-P1    = 70e3;   % (a) Freestream pressure [Pa]
-T1    = 210;    % (a) Freestream temperature [K]
-M1    = 3.24;   % (b) Flight Mach number
+P1    = 2760;   % (a) Freestream pressure [Pa]
+T1    = 221;    % (a) Freestream temperature [K]
+M1    = 3.2;   % (b) Flight Mach number
 Mx    = 1.2;    % (c) Normal shock strength (Mach just before shock)
 M2    = 0.3;    % (d) Burner entry Mach number
 Tb    = 1400;   % (e) Burner temperature [K]
 Pb_P2 = 1.0;    % (f) Burner pressure ratio (ideal = 1)
 P4_P1 = 1.0;    % (g) Exhaust pressure ratio (ideal = 1)
-F_req = 10e3;   % (h) Required thrust [N]
+F_req = 50e3;   % (h) Required thrust [N]
 
 %% ========================================================
 % BASELINE DESIGN — full printed output
@@ -50,6 +50,8 @@ end
 % eta > 1 region is shaded to highlight thermodynamically impossible
 % operating conditions — useful for stress-testing the design limits.
 % ========================================================
+
+param_names = {'M1','T1','P1','Mx','M2','Tb','Pb_P2','P4_P1'};
 
 x_labels = {'Flight Mach Number M_1', ...
              'Freestream Temperature T_1 [K]', ...
@@ -99,7 +101,8 @@ for fig = 1:8
             case 7; pb_i=vec(i);
             case 8; ep_i=vec(i);
         end
-        [r,v] = ramjet_solve(p1_i,t1_i,m1_i,mx_i,m2_i,tb_i,pb_i,ep_i,F_req,gamma,R);
+        [r,v] = ramjet_solve(p1_i,t1_i,m1_i,mx_i,m2_i,tb_i,pb_i,ep_i,F_req,gamma,R, ...
+                              param_names{fig}, vec(i)*x_scale(fig));
         if v
             eta_p_vec(i) = r.eta_p;
             eta_c_vec(i) = r.eta_cycle;
@@ -126,7 +129,8 @@ end
 % Inputs:  P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
 % Outputs: res (struct of all results), valid (logical flag)
 % ========================================================
-function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R)
+function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R,swept_var,swept_val)
+    if nargin < 12; swept_var = 'baseline'; swept_val = NaN; end
     valid = false;
     res   = struct();
     try
@@ -171,17 +175,32 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         % --- Burner (2 -> b, constant pressure Pb = Pb_P2 * P2) ---
         % Quadratic from lecture (slide 39), combining mass + momentum:
         disc = (T2/Tb)*(M2 + 1/(gamma*M2))^2 - 4/gamma;
-        disc = max(disc, 0);  % snap negative disc to zero (choked/stress-test limit)
+
+        % If discriminant is negative, no real Mb exists — burner is choked
+        if disc < 0
+            fprintf('\n*** CHOKED BURNER: Discriminant = %.6f < 0 ***\n', disc);
+            fprintf('    No real solution for Mb exists.\n');
+            fprintf('    Tb/T2 = %.4f exceeds maximum allowable.\n', Tb/T2);
+            fprintf('    T2 = %.2f K,  Tb = %.2f K\n', T2, Tb);
+            fprintf('    Variable being varied: %s = %.4f\n', swept_var, swept_val);
+            valid = false;
+            return;
+        end
 
         term1  = sqrt(T2/Tb) * (M2 + 1/(gamma*M2));
         term2  = sqrt(disc);
         Mb_pos = 0.5*term1 + 0.5*term2;
         Mb_neg = 0.5*term1 - 0.5*term2;
 
-        % Choose subsonic root preferentially; fall back to Mb_neg for stress testing
+        fprintf('Mb+ = %.4f,  Mb- = %.4f\n', Mb_pos, Mb_neg);
+
+        % Choose subsonic root (0 < Mb < 1)
         if     Mb_neg > 0 && Mb_neg < 1; Mb = Mb_neg;
         elseif Mb_pos > 0 && Mb_pos < 1; Mb = Mb_pos;
-        else; Mb = Mb_neg;  % stress-test: use lower root even if out of range
+        else
+            fprintf('\n*** ERROR: Neither Mb root is subsonic ***\n');
+            fprintf('    Mb+ = %.4f,  Mb- = %.4f\n', Mb_pos, Mb_neg);
+            error('No subsonic Mb root found: Mb+ = %.4f, Mb- = %.4f', Mb_pos, Mb_neg);
         end
 
         % Burner exit area from momentum conservation (Pb = P2)
