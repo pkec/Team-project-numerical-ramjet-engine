@@ -71,14 +71,14 @@ titles   = {'Efficiency vs Flight Mach Number', ...
              'Efficiency vs Exhaust Pressure Ratio'};
 
 % Parameter sweep vectors
-vecs{1} = linspace(1.5,  10.0,  120);
-vecs{2} = linspace(180,  300,    80);
-vecs{3} = linspace(20e3, 101e3,  80);
-vecs{4} = linspace(1.01, min(M1-0.05, 3.0), 80);
-vecs{5} = linspace(0.05, 0.7,    80);
+vecs{1} = linspace(2.5,  6.0,   120);
+vecs{2} = linspace(100,  600,    80);
+vecs{3} = linspace(1e3, 101e3,  80);
+vecs{4} = linspace(0, 6,  80);
+vecs{5} = linspace(0.0, 0.4,    80);
 vecs{6} = linspace(500,  2500,  120);
-vecs{7} = linspace(0.1,  2.0,    80);
-vecs{8} = linspace(0.1,  3.0,    80);
+vecs{7} = linspace(0.4,  1.8,    80);
+vecs{8} = linspace(0.0, 3.0,    80);
 
 x_scale = [1, 1, 1e-3, 1, 1, 1, 1, 1];  % P1 displayed in kPa
 
@@ -112,15 +112,134 @@ for fig = 1:8
     x_plot = vec * x_scale(fig);
 
     figure(fig); clf; hold on;
+
+    % --- Compute y-axis limits ---
+    all_eta = [eta_p_vec, eta_c_vec];
+    y_min = min(min(all_eta, [], 'omitnan') - 0.1, 0.0);
+    y_max = max(max(all_eta, [], 'omitnan') + 0.1, 1.15);
+
+
+
+    % --- Identify bad regions ---
+    is_nan  = isnan(eta_p_vec) | isnan(eta_c_vec);
+    is_over = (~is_nan) & ((eta_p_vec > 1) | (eta_c_vec > 1));
+    is_bad  = is_nan | is_over;
+
+    % Find contiguous bad blocks
+    starts_b = find(diff([false, is_bad]) ==  1);
+    ends_b   = find(diff([is_bad, false]) == -1);
+
+    h4 = [];
+    for k = 1:length(starts_b)
+        sb = starts_b(k);
+        eb = ends_b(k);
+
+        % --- Determine if this is a LEFT-side block (starts at or near index 1)
+        %     or a RIGHT-side / interior block ---
+        is_left_block = (sb == 1);
+
+        if is_left_block
+            % LEFT side: shade from x_plot(1) to the interpolated crossing point
+            % where the bad region ENDS and valid region begins
+            if eb < n
+                % Interpolate exit crossing between eb and eb+1
+                x_prev = x_plot(eb);
+                x_curr = x_plot(eb+1);
+                ep_prev = eta_p_vec(eb);   ep_curr = eta_p_vec(eb+1);
+                ec_prev = eta_c_vec(eb);   ec_curr = eta_c_vec(eb+1);
+                x_cross_p = Inf; x_cross_c = Inf;
+                if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev>1) && (ep_curr<=1)
+                    x_cross_p = x_prev + (ep_prev-1)/(ep_prev-ep_curr)*(x_curr-x_prev);
+                end
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev>1) && (ec_curr<=1)
+                    x_cross_c = x_prev + (ec_prev-1)/(ec_prev-ec_curr)*(x_curr-x_prev);
+                end
+                % Use the earliest (leftmost) crossing as the right edge
+                x_cross = min([x_cross_p, x_cross_c]);
+                if isinf(x_cross); x_cross = x_curr; end
+            else
+                x_cross = x_plot(end);
+            end
+            x_lo = x_plot(1);
+            x_hi = x_cross;
+
+        else
+            % RIGHT side or interior: find left boundary
+            if sb > 1
+                x_prev = x_plot(sb-1); x_curr = x_plot(sb);
+                ep_prev = eta_p_vec(sb-1); ep_curr = eta_p_vec(sb);
+                ec_prev = eta_c_vec(sb-1); ec_curr = eta_c_vec(sb);
+                x_cross_p = Inf; x_cross_c = Inf;
+                if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev<=1) && (ep_curr>1)
+                    x_cross_p = x_prev + (1-ep_prev)/(ep_curr-ep_prev)*(x_curr-x_prev);
+                end
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev<=1) && (ec_curr>1)
+                    x_cross_c = x_prev + (1-ec_prev)/(ec_curr-ec_prev)*(x_curr-x_prev);
+                end
+                x_lo = min([x_cross_p, x_cross_c]);
+                % If no eta=1 crossing found (e.g. NaN block), extend back to
+                % last valid point so there is no gap
+                if isinf(x_lo); x_lo = x_prev; end
+            else
+                x_lo = x_plot(sb);
+            end
+            % Right boundary: interpolate where bad region ends, or use next valid point
+            if eb < n && ~is_bad(eb+1)
+                x_prev = x_plot(eb); x_curr = x_plot(eb+1);
+                ep_prev = eta_p_vec(eb); ep_curr = eta_p_vec(eb+1);
+                ec_prev = eta_c_vec(eb); ec_curr = eta_c_vec(eb+1);
+                x_cross_p = Inf; x_cross_c = Inf;
+                if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev>1) && (ep_curr<=1)
+                    x_cross_p = x_prev + (ep_prev-1)/(ep_prev-ep_curr)*(x_curr-x_prev);
+                end
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev>1) && (ec_curr<=1)
+                    x_cross_c = x_prev + (ec_prev-1)/(ec_prev-ec_curr)*(x_curr-x_prev);
+                end
+                x_hi = min([x_cross_p, x_cross_c]);
+                % If no eta=1 crossing (e.g. NaN block ending), extend to next valid point
+                if isinf(x_hi); x_hi = x_curr; end
+            else
+                x_hi = x_plot(end);
+            end
+        end
+
+        h4 = fill([x_lo, x_hi, x_hi, x_lo], ...
+                  [y_min, y_min, y_max, y_max], ...
+                  [0.6 0.6 0.6], 'EdgeColor', 'none', 'FaceAlpha', 0.35);
+
+        % Dashed line at the meaningful boundary:
+        % left block -> right edge (where valid region begins)
+        % right block -> left edge (where impossible region begins)
+        if is_left_block
+            xline(x_hi, 'k--', sprintf('%.2f', x_hi), ...
+                  'FontSize', 14, 'LabelVerticalAlignment', 'bottom', ...
+                  'LabelHorizontalAlignment', 'right', 'LineWidth', 1.2);
+        else
+            xline(x_lo, 'k--', sprintf('%.2f', x_lo), ...
+                  'FontSize', 14, 'LabelVerticalAlignment', 'bottom', ...
+                  'LabelHorizontalAlignment', 'left', 'LineWidth', 1.2);
+        end
+    end
+
+    % --- eta = 1 reference line ---
+    plot([x_plot(1), x_plot(end)], [1, 1], 'k-', 'LineWidth', 1.0);
+
+    % --- Efficiency curves (plotted on top of shading) ---
     h1 = plot(x_plot, eta_p_vec, 'b-',  'LineWidth', 1.8);
     h2 = plot(x_plot, eta_c_vec, 'r--', 'LineWidth', 1.8);
 
+    ylim([y_min, y_max]);
     xlabel(x_labels{fig}, 'FontSize', 22, 'FontWeight', 'bold');
-    ylabel('\eta',        'FontSize', 22, 'FontWeight', 'bold');
+    ylabel('\eta',         'FontSize', 22, 'FontWeight', 'bold');
     title(titles{fig},     'FontSize', 24, 'FontWeight', 'bold');
-    legend([h1 h2], '\eta_p', '\eta_{cycle}', ...
-           'Location', 'best', 'FontSize', 20);
-    set(gca, 'FontSize', 20);   % axis tick labels
+    if ~isempty(h4)
+        legend([h1 h2 h4], '\eta_p', '\eta_{cycle}', ...
+               'Impossible / No solution', 'Location', 'best', 'FontSize', 16);
+    else
+        legend([h1 h2], '\eta_p', '\eta_{cycle}', ...
+               'Location', 'best', 'FontSize', 16);
+    end
+    set(gca, 'FontSize', 20);
     grid on;
 end
 
