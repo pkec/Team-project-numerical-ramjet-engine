@@ -73,12 +73,12 @@ titles   = {'Efficiency vs Flight Mach Number', ...
 % Parameter sweep vectors
 vecs{1} = linspace(2.5,  6.0,   120);
 vecs{2} = linspace(100,  600,    80);
-vecs{3} = linspace(1e3, 101e3,  80);
-vecs{4} = linspace(0, 6,  80);
-vecs{5} = linspace(0.0, 0.4,    80);
-vecs{6} = linspace(500,  2500,  120);
-vecs{7} = linspace(0.4,  1.8,    80);
-vecs{8} = linspace(0.0, 3.0,    80);
+vecs{3} = linspace(1e3,  101e3,  80);
+vecs{4} = linspace(0,    6,      80);
+vecs{5} = linspace(0.0,  1,    80);
+vecs{6} = linspace(0,  1800,  120);
+vecs{7} = linspace(0.7,  1,    80);
+vecs{8} = linspace(0.3,  13,    80);
 
 x_scale = [1, 1, 1e-3, 1, 1, 1, 1, 1];  % P1 displayed in kPa
 
@@ -121,9 +121,22 @@ for fig = 1:8
 
 
     % --- Identify bad regions ---
-    is_nan  = isnan(eta_p_vec) | isnan(eta_c_vec);
-    is_over = (~is_nan) & ((eta_p_vec > 1) | (eta_c_vec > 1));
-    is_bad  = is_nan | is_over;
+    % Rules:
+    %   (1) NaN = no solution — always bad
+    %   (2) eta_cycle < 0 = thermodynamic efficiency negative — always impossible
+    %   (3) eta_p > 1 = impossible for all plots EXCEPT fig 8 (EPR), where
+    %       P4/P1 varies and pressure thrust can legitimately push eta_p > 1
+    %   (4) When multiple conditions trigger, the EARLIEST (leftmost) onset is used
+    %       since is_bad is a logical OR — the shading starts at whichever comes first
+    is_nan    = isnan(eta_p_vec) | isnan(eta_c_vec);
+    is_neg_ec = (~is_nan) & (eta_c_vec < 0);
+    if fig == 8
+        % EPR plot: eta_p > 1 is achievable via pressure thrust — exclude from bad
+        is_over = (~is_nan) & (eta_c_vec > 1);
+    else
+        is_over = (~is_nan) & ((eta_p_vec > 1) | (eta_c_vec > 1));
+    end
+    is_bad = is_nan | is_neg_ec | is_over;
 
     % Find contiguous bad blocks
     starts_b = find(diff([false, is_bad]) ==  1);
@@ -147,15 +160,18 @@ for fig = 1:8
                 x_curr = x_plot(eb+1);
                 ep_prev = eta_p_vec(eb);   ep_curr = eta_p_vec(eb+1);
                 ec_prev = eta_c_vec(eb);   ec_curr = eta_c_vec(eb+1);
-                x_cross_p = Inf; x_cross_c = Inf;
+                x_cross_p = Inf; x_cross_c = Inf; x_cross_cn = Inf;
                 if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev>1) && (ep_curr<=1)
                     x_cross_p = x_prev + (ep_prev-1)/(ep_prev-ep_curr)*(x_curr-x_prev);
                 end
                 if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev>1) && (ec_curr<=1)
                     x_cross_c = x_prev + (ec_prev-1)/(ec_prev-ec_curr)*(x_curr-x_prev);
                 end
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev<0) && (ec_curr>=0)
+                    x_cross_cn = x_prev + (0-ec_prev)/(ec_curr-ec_prev)*(x_curr-x_prev);
+                end
                 % Use the earliest (leftmost) crossing as the right edge
-                x_cross = min([x_cross_p, x_cross_c]);
+                x_cross = min([x_cross_p, x_cross_c, x_cross_cn]);
                 if isinf(x_cross); x_cross = x_curr; end
             else
                 x_cross = x_plot(end);
@@ -169,16 +185,18 @@ for fig = 1:8
                 x_prev = x_plot(sb-1); x_curr = x_plot(sb);
                 ep_prev = eta_p_vec(sb-1); ep_curr = eta_p_vec(sb);
                 ec_prev = eta_c_vec(sb-1); ec_curr = eta_c_vec(sb);
-                x_cross_p = Inf; x_cross_c = Inf;
+                x_cross_p = Inf; x_cross_c = Inf; x_cross_cn = Inf;
                 if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev<=1) && (ep_curr>1)
                     x_cross_p = x_prev + (1-ep_prev)/(ep_curr-ep_prev)*(x_curr-x_prev);
                 end
                 if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev<=1) && (ec_curr>1)
                     x_cross_c = x_prev + (1-ec_prev)/(ec_curr-ec_prev)*(x_curr-x_prev);
                 end
-                x_lo = min([x_cross_p, x_cross_c]);
-                % If no eta=1 crossing found (e.g. NaN block), extend back to
-                % last valid point so there is no gap
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev>=0) && (ec_curr<0)
+                    x_cross_cn = x_prev + (0-ec_prev)/(ec_curr-ec_prev)*(x_curr-x_prev);
+                end
+                x_lo = min([x_cross_p, x_cross_c, x_cross_cn]);
+                % If no crossing found (e.g. NaN block), extend to last valid point
                 if isinf(x_lo); x_lo = x_prev; end
             else
                 x_lo = x_plot(sb);
@@ -188,15 +206,18 @@ for fig = 1:8
                 x_prev = x_plot(eb); x_curr = x_plot(eb+1);
                 ep_prev = eta_p_vec(eb); ep_curr = eta_p_vec(eb+1);
                 ec_prev = eta_c_vec(eb); ec_curr = eta_c_vec(eb+1);
-                x_cross_p = Inf; x_cross_c = Inf;
+                x_cross_p = Inf; x_cross_c = Inf; x_cross_cn = Inf;
                 if ~isnan(ep_prev) && ~isnan(ep_curr) && (ep_prev>1) && (ep_curr<=1)
                     x_cross_p = x_prev + (ep_prev-1)/(ep_prev-ep_curr)*(x_curr-x_prev);
                 end
                 if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev>1) && (ec_curr<=1)
                     x_cross_c = x_prev + (ec_prev-1)/(ec_prev-ec_curr)*(x_curr-x_prev);
                 end
-                x_hi = min([x_cross_p, x_cross_c]);
-                % If no eta=1 crossing (e.g. NaN block ending), extend to next valid point
+                if ~isnan(ec_prev) && ~isnan(ec_curr) && (ec_prev<0) && (ec_curr>=0)
+                    x_cross_cn = x_prev + (0-ec_prev)/(ec_curr-ec_prev)*(x_curr-x_prev);
+                end
+                x_hi = min([x_cross_p, x_cross_c, x_cross_cn]);
+                % If no crossing (e.g. NaN block ending), extend to next valid point
                 if isinf(x_hi); x_hi = x_curr; end
             else
                 x_hi = x_plot(end);
@@ -260,7 +281,8 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         AC1_A1    = 1/A1_Astar;
 
         % --- Normal shock (x -> y) ---
-        if Mx < 1; return; end  % Mx must be supersonic
+        if Mx < 1;  return; end  % Mx must be supersonic
+        if Mx > M1; return; end  % Mx cannot exceed M1 — inlet geometry impossible
         My        = sqrt(((gamma-1)*Mx^2 + 2) / (2*gamma*Mx^2 - (gamma-1)));
         Py_Px     = (2*gamma*Mx^2 - (gamma-1)) / (gamma+1);
         Ty_Tx     = Py_Px * ((gamma+1)*Mx^2) / ((gamma-1)*Mx^2 + 2);
