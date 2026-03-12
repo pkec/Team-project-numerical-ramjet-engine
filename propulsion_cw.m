@@ -51,6 +51,10 @@ end
 % operating conditions — useful for stress-testing the design limits.
 % ========================================================
 
+% ========================================================
+% THIS MARKS THE BEGINNING OF PLOTTING LOGIC SECTION
+% ========================================================
+
 param_names = {'M1','T1','P1','Mx','M2','Tb','Pb_P2','P4_P1'};
 
 x_labels = {'Flight Mach Number M_1', ...
@@ -70,7 +74,7 @@ titles   = {'Efficiency vs Flight Mach Number', ...
              'Efficiency vs Burner Pressure Ratio', ...
              'Efficiency vs Exhaust Pressure Ratio'};
 
-% Parameter sweep vectors
+% Parameter sweep vectors. Parameters correspond to titles above
 vecs{1} = linspace(2.5,  6.0,   120);
 vecs{2} = linspace(100,  600,    80);
 vecs{3} = linspace(1e3,  101e3,  80);
@@ -82,6 +86,7 @@ vecs{8} = linspace(0.3,  13,    80);
 
 x_scale = [1, 1, 1e-3, 1, 1, 1, 1, 1];  % P1 displayed in kPa
 
+% Beginning of plotting function
 for fig = 1:8
     vec = vecs{fig};
     n   = length(vec);
@@ -264,6 +269,14 @@ for fig = 1:8
     grid on;
 end
 
+% ========================================================
+% THIS MARKS THE END OF PLOTTING LOGIC SECTION
+% ========================================================
+
+% ========================================================
+% THIS MARKS THE BEGINNING OF COMPUTATION SECTION
+% ========================================================
+
 %% ========================================================
 % LOCAL FUNCTION: ramjet_solve
 % Inputs:  P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
@@ -275,29 +288,32 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
     res   = struct();
     try
         % --- Inlet (1 -> C1, isentropic) ---
-        T01_T1    = 1 + ((gamma-1)/2)*M1^2;
+        % The following are all standard isentropic flow relations
+        T01_T1    = 1 + ((gamma-1)/2)*M1^2; 
         P01_P1    = T01_T1^(gamma/(gamma-1));
         A1_Astar  = (1/M1)*((2/(gamma+1))*T01_T1)^((gamma+1)/(2*(gamma-1)));
         AC1_A1    = 1/A1_Astar;
 
         % --- Normal shock (x -> y) ---
-        if Mx < 1;  return; end  % Mx must be supersonic
-        if Mx > M1; return; end  % Mx cannot exceed M1 — inlet geometry impossible
-        My        = sqrt(((gamma-1)*Mx^2 + 2) / (2*gamma*Mx^2 - (gamma-1)));
-        Py_Px     = (2*gamma*Mx^2 - (gamma-1)) / (gamma+1);
+        % The following are all standard normal shock equations
+        if Mx < 1;  return; end  % It assumed that there must be a shock hence Mx must be supersonic
+        My        = sqrt(((gamma-1)*Mx^2 + 2) / (2*gamma*Mx^2 - (gamma-1))); 
+        Py_Px     = (2*gamma*Mx^2 - (gamma-1)) / (gamma+1); 
         Ty_Tx     = Py_Px * ((gamma+1)*Mx^2) / ((gamma-1)*Mx^2 + 2);
         rhoy_rhox = ((gamma+1)*Mx^2) / ((gamma-1)*Mx^2 + 2);
         T0x_Tx    = 1 + ((gamma-1)/2)*Mx^2;
         Ax_Axstar = (1/Mx)*((2/(gamma+1))*T0x_Tx)^((gamma+1)/(2*(gamma-1)));
         T0y_Ty    = 1 + ((gamma-1)/2)*My^2;
         Ay_Aystar = (1/My)*((2/(gamma+1))*T0y_Ty)^((gamma+1)/(2*(gamma-1)));
-        As_AC1    = Ax_Axstar;
+        As_AC1    = Ax_Axstar; % By design, at X and C1, is located at the same position.
 
         % Stagnation pressure ratio across shock
+        % Shock relation used
         P0y_P0x = ((((gamma+1)/2)*Mx^2) / (1+((gamma-1)/2)*Mx^2))^(gamma/(gamma-1)) * ...
                   ((2*gamma/(gamma+1))*Mx^2 - (gamma-1)/(gamma+1))^(-1/(gamma-1));
 
         % --- Burner entry (y -> 2, isentropic) ---
+        % The following are all standard isentropic flow relations
         T02_T2    = 1 + ((gamma-1)/2)*M2^2;
         P02_P2    = T02_T2^(gamma/(gamma-1));
         A2_A2star = (1/M2)*((2/(gamma+1))*T02_T2)^((gamma+1)/(2*(gamma-1)));
@@ -317,7 +333,7 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         % Quadratic from lecture (slide 39), combining mass + momentum:
         disc = (T2/Tb)*(M2 + 1/(gamma*M2))^2 - 4/gamma;
 
-        % If discriminant is negative, no real Mb exists — burner is choked
+        % If discriminant is negative, no real Mb exists — burner is choked, notify user of error
         if disc < 0
             fprintf('\n*** CHOKED BURNER: Discriminant = %.6f < 0 ***\n', disc);
             fprintf('    No real solution for Mb exists.\n');
@@ -328,12 +344,15 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
             return;
         end
 
+        % Solving for Mb quadratically
         term1  = sqrt(T2/Tb) * (M2 + 1/(gamma*M2));
         term2  = sqrt(disc);
         Mb_pos = 0.5*term1 + 0.5*term2;
         Mb_neg = 0.5*term1 - 0.5*term2;
 
-        % Choose subsonic root (0 < Mb < 1)
+        % Choose subsonic root (0 < Mb < 1) else identify non-real solutions then notify user of error
+        % Supersonic combustion (Mb > 1) not considered as not a scramjet
+        
         if     Mb_neg > 0 && Mb_neg < 1; Mb = Mb_neg;
         elseif Mb_pos > 0 && Mb_pos < 1; Mb = Mb_pos;
         else
@@ -343,17 +362,20 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         end
 
         % Burner exit area from momentum conservation (Pb = P2)
+        % The following are all standard isentropic flow relations
         Ab_A2 = (1 + gamma*M2^2) / (1 + gamma*Mb^2);
         Ab_A1 = Ab_A2 * A2_A1;
 
         % Burner exit stagnation conditions
+        % The following are all standard isentropic flow relations
         Pb      = Pb_P2 * P2;
         T0b_Tb  = 1 + ((gamma-1)/2)*Mb^2;
         T0b     = Tb * T0b_Tb;
         P0b_Pb  = T0b_Tb^(gamma/(gamma-1));
-        P0b     = Pb * P0b_Pb; %#ok
+        P0b     = Pb * P0b_Pb;
 
         % --- Nozzle throat (b -> C2, isentropic) ---
+        % The following are all standard isentropic flow relations
         Ab_Abstar = (1/Mb)*((2/(gamma+1))*T0b_Tb)^((gamma+1)/(2*(gamma-1)));
         AC2_A1    = (1/Ab_Abstar) * Ab_A1;
 
@@ -362,14 +384,20 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         % P04/P4 = (P0b/Pb) * (Pb/P2) * (P2/P02) * (P0y/P0x) * (P01/P1) * (P1/P4)
         %        =  P0b_Pb  *  Pb_P2  * 1/P02_P2  *  P0y_P0x  *  P01_P1  * 1/P4_P1
         P04_P4 = P0b_Pb * Pb_P2 * (1/P02_P2) * P0y_P0x * P01_P1 * (1/P4_P1);
-        % P04_P4 <= 1 would give imaginary M4 — clamp to avoid crash
-        P04_P4 = max(P04_P4, 1.001);
-
+        % P04_P4 <= 1 would give imaginary M4, leading to code crashing
+        %Notify user of error
+        if P04_P4 <= 1
+            fprintf('\n*** ERROR: Unacceptable P04/P4 ***\n');
+            error('P04/P4 = %.4f', P04/P4);
+        end
+        
+        % The following are all standard isentropic flow relations
+        
         M4 = sqrt((2/(gamma-1)) * (P04_P4^((gamma-1)/gamma) - 1));
 
         T04_T4    = 1 + ((gamma-1)/2)*M4^2;
         T4        = T0b / T04_T4;
-        % T4 <= 0 nonphysical but allow for stress testing
+        % T4 <= 0 nonphysical but allowed for stress testing
 
         A4_A4star = (1/M4)*((2/(gamma+1))*T04_T4)^((gamma+1)/(2*(gamma-1)));
         A4_A1     = A4_A4star * AC2_A1;
@@ -380,15 +408,16 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
 
         % --- Thrust ---
         % F/(P1*A1) = gamma*(M4^2*(P4/P1)*(A4/A1) - M1^2) + (P4/P1 - 1)*(A4/A1)
+        % Non-dimensionalised thrust
         F_over_P1A1 = gamma*(M4^2*P4_P1*A4_A1 - M1^2) + (P4_P1 - 1)*A4_A1;
         % Note: negative value means drag — efficiencies still computed
         A1_val = F_req / (P1 * F_over_P1A1);
 
         % --- Efficiencies ---
         % Propulsive efficiency from lecture (general, no ideal expansion assumption):
-        % eta_p = (F/P1A1) * (2*R*T1) / (U4^2 - U1^2)
-        eta_p     = F_over_P1A1 * (2*R*T1) / (U4^2 - U1^2);
-        eta_cycle = 1 - (T4 - T1)/(Tb - T2);
+        % eta_p = (F/P1A1) * (2*R*T1) / (U4^2 - U1^2) 
+        eta_p     = F_over_P1A1 * (2*R*T1) / (U4^2 - U1^2); % Thrust over jet kinetic energy
+        eta_cycle = 1 - (T4 - T1)/(Tb - T2); % Cycle efficiency formula not assuming ideal expansion
 
         % --- Pack all results ---
         res.T01_T1      = T01_T1;
@@ -431,6 +460,11 @@ function [res, valid] = ramjet_solve(P1,T1,M1,Mx,M2,Tb,Pb_P2,P4_P1,F_req,gamma,R
         valid = false;
     end
 end
+
+% ========================================================
+% THIS MARKS THE END OF COMPUTATION SECTION
+% ========================================================
+
 
 %% ========================================================
 % LOCAL FUNCTION: print_results
